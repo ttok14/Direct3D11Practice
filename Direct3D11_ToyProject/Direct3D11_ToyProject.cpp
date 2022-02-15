@@ -3,6 +3,7 @@
 
 #include "stdafx.h"
 #include "Direct3D11_ToyProject.h"
+#include <assert.h>
 #include <windows.h>
 #include <d3d11.h>										// D3D interface
 #include <dxgi.h>											// DirectX driver interface
@@ -15,6 +16,8 @@
 
 #define MAX_LOADSTRING 100
 
+void InitializeDirect3D();
+
 // 전역 변수:
 HINSTANCE hInst;                                // 현재 인스턴스입니다.
 WCHAR szTitle[MAX_LOADSTRING];                  // 제목 표시줄 텍스트입니다.
@@ -25,6 +28,13 @@ ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
+
+ID3D11Device* pDevice = NULL;
+ID3D11DeviceContext* pDeviceContext = NULL;
+IDXGISwapChain* pSwapChain = NULL;
+ID3D11RenderTargetView* pRenderTargetView = NULL;
+
+HWND g_hWnd;
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	_In_opt_ HINSTANCE hPrevInstance,
@@ -49,6 +59,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 	HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_DIRECT3D11TOYPROJECT));
 
+	InitializeDirect3D();
+
 	MSG msg = {};
 
 	bool shouldClose = false;
@@ -72,7 +84,67 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	return (int)msg.wParam;
 }
 
+void InitializeDirect3D()
+{
+	DXGI_SWAP_CHAIN_DESC swapChainDesc = { 0 };
+	swapChainDesc.BufferDesc.RefreshRate.Numerator = 0;
+	swapChainDesc.BufferDesc.RefreshRate.Denominator = 1;
+	/// DXGI_FORMAT_B8G8R8A8_UNORM 는 Gamma Correction 적용 X
+	///		=> DXGI_FORMAT_B8G8R8A8_UNORM_SRGB 로 대체 가능
+	swapChainDesc.BufferDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+	swapChainDesc.SampleDesc.Count = 1;
+	swapChainDesc.SampleDesc.Quality = 0;
+	swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+	// BackBuffer 개수 . 일반적으로 FrontBuffer 1 개 BackBuffer 1 개로 SwapChain 구성 
+	swapChainDesc.BufferCount = 1;
+	swapChainDesc.OutputWindow = g_hWnd;
+	swapChainDesc.Windowed = true;
 
+	D3D_FEATURE_LEVEL feature_level;
+	// Single Threaded
+	UINT flags = D3D11_CREATE_DEVICE_SINGLETHREADED;
+#if defined(DEBUG) || defined (_DEBUG)
+	flags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
+	HRESULT hr = D3D11CreateDeviceAndSwapChain(
+		NULL,
+		D3D_DRIVER_TYPE_HARDWARE, // Hardware => Software => Reference 순으로 속도 차이발생 
+		NULL,
+		flags,
+		NULL,
+		0,
+		D3D11_SDK_VERSION,
+		&swapChainDesc,
+		&pSwapChain,
+		&pDevice,
+		&feature_level,
+		&pDeviceContext
+	);
+
+	// 참고 - #include <assert.h> 포함해야함
+	assert(hr == S_OK && pSwapChain && pDevice && pDeviceContext);
+
+	// Here I have added extra debug output to the function flags 
+	// when the program is built in debug mode. If all went well, 
+	// you should be able to now compile and run it, without an assertion 
+	// triggering. Otherwise check the parameter values carefully. 
+	// The output images from Direct3D are called Render Targets. 
+	// We can get a view pointer to ours now, by fetching it from our swap chain.
+	ID3D11Texture2D* framebuffer;
+	hr = pSwapChain->GetBuffer(
+		0,
+		__uuidof(ID3D11Texture2D),
+		(void**)&framebuffer
+	);
+
+	assert(SUCCEEDED(hr));
+
+	hr = pDevice->CreateRenderTargetView(framebuffer, 0, &pRenderTargetView);
+	
+	assert(SUCCEEDED(hr));
+
+	framebuffer->Release();
+}
 
 //
 //  함수: MyRegisterClass()
@@ -114,16 +186,16 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
 	hInst = hInstance; // 인스턴스 핸들을 전역 변수에 저장합니다.
 
-	HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
+	g_hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
 		CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
 
-	if (!hWnd)
+	if (!g_hWnd)
 	{
 		return FALSE;
 	}
 
-	ShowWindow(hWnd, nCmdShow);
-	UpdateWindow(hWnd);
+	ShowWindow(g_hWnd, nCmdShow);
+	UpdateWindow(g_hWnd);
 
 	return TRUE;
 }
