@@ -530,9 +530,18 @@ void CreateVertexBuffer(ID3D11Buffer** ppVertexBuffer)
 
 	D3D11_BUFFER_DESC vertex_buffer_desc = {};
 	vertex_buffer_desc.ByteWidth = sizeof(vertex_data_array);
-	// D3D11_USAGE_DEFAULT 은 수정 가능한 Buffer 를 만듬 
+	// 해당 Vertex 의 Usage 즉 해당 리소스를 어떻게 사용할것이냐에 따라 
+	// Direct 에서 적절하게 용도에 맞는 메모리에 위치시키고 읽기/쓰기 제한도
+	// 설정해놓음.
+	// 기본적으로 D3D11_USAGE_DEFAULT 은 읽기/쓰기가 가능하고 , 
+	// GPU 만 접근 가능한 VRam 상에 리소스를 로드함 . (CPU 접근 불가)
 	//		=> D3D11_USAGE_IMMUTABLE 옵션 같은 경우에는
-	//				수정이 불가능한 대신 Optimization 에 유리함
+	//				쓰기가 불가능한 대신 읽기만 가능 => 용도에 맞을때 optimization 가능
+	//		=> D3D11_USAGE_STAGING 은 GPU 메모리(vram) 에서 CPU 메모리(system memory) 
+	//				로 복사 허용함 (CopyResource 함수)
+	//		=> 엄청 느리다 
+	// Direct9 같은 경우에는 아예 memory 자체를 넘겨줬는데 10/11 에서는 용도에 따라
+	// Direct 가 적절하게 설정하게 하기위해 이렇게 됨.
 	vertex_buffer_desc.Usage = D3D11_USAGE_DEFAULT;
 	vertex_buffer_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 
