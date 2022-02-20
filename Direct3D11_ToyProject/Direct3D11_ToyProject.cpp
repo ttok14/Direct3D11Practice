@@ -23,7 +23,8 @@ void InitializeDirect3D();
 void SetupShader();
 HRESULT CompileShader(LPCWSTR shaderFileName, LPCSTR entryPoint, LPCSTR target, UINT flags, ID3DBlob** ppCode, ID3DBlob** ppErrorBlob);
 
-// 전역 변수:
+// =======:: 전역 변수 ::=========
+
 HINSTANCE hInst;                                // 현재 인스턴스입니다.
 WCHAR szTitle[MAX_LOADSTRING];                  // 제목 표시줄 텍스트입니다.
 WCHAR szWindowClass[MAX_LOADSTRING];            // 기본 창 클래스 이름입니다.
@@ -173,6 +174,7 @@ void InitializeDirect3D()
 	assert(SUCCEEDED(hr));
 }
 
+// shaders.hlsl 참고 (project path 상에 위치)
 void SetupShader()
 {
 	UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
@@ -188,13 +190,74 @@ void SetupShader()
 
 	// VertexShader, PixelShader 를 Compile 해서 blob(Big binary object) 형태로 캐싱
 	//			=> D3DCompileFromFile 메서드가 수행 
+	// 해당 File 은 현재 Project 의 directory 상에 위치하면 됨 
 	LPCWSTR shaderFileName = L"shaders.hlsl";
 
-	// Vertex Shader 컴파일
-	CompileShader(L"shaders.hlsl", "vs_main", "vs_5_0", flags, &pVsBlob, &errorBlob);
+	ID3D11VertexShader* pVertexShader = NULL;
+	ID3D11PixelShader* pPixelShader = NULL;
 
-	// Pixel Shader 컴파일 
-	CompileShader(L"shaders.hlsl", "ps_main", "ps_5_0", flags, &pPsBlob, &errorBlob);
+	HRESULT hr;
+
+	// Vertex Shader 컴파일 
+	hr = CompileShader(L"shaders.hlsl", "vs_main", "vs_5_0", flags, &pVsBlob, &errorBlob);
+	if (SUCCEEDED(hr))
+	{
+		// 컴파일에 성공하였으면 Shader 객체 생성 
+		hr = pDevice->CreateVertexShader(
+			pVsBlob->GetBufferPointer(),
+			pVsBlob->GetBufferSize(),
+			NULL,
+			&pVertexShader);
+	}
+
+	// 실패 처리 
+	assert(SUCCEEDED(hr));
+
+	// Pixel Shader 생성 
+	hr = CompileShader(L"shaders.hlsl", "ps_main", "ps_5_0", flags, &pPsBlob, &errorBlob);
+	if (SUCCEEDED(hr))
+	{
+		hr = pDevice->CreatePixelShader(
+			pPsBlob->GetBufferPointer(),
+			pPsBlob->GetBufferSize(),
+			NULL,
+			&pPixelShader);
+	}
+
+	// 실패 처리 
+	assert(SUCCEEDED(hr));
+
+	// Input Layout 생성 
+	//		=> Input Assembler stage (IA stage) 에서 Vertex Shader 를 위해 user 즉 프로그래머가 
+	//			primitve data 를 fill 한 buffer 로 부터 semantic 을 attach 하거나 , Shader 의 여러 Stage 들에서 
+	//			사용 가능한 형태의 primitive 로 조립을 시키는데 , 이때 user 가 fill 한 buffer 에 있는 
+	//			vertex data 가 어떻게 Vertex Shader 에 Mapping 이 되어야 하는지에 대한 처리임 . 
+	//		=> 즉 , vertex shader 에서 input 값으로 들어가는 값에 대한 설정이므로 Input layout 이라 불리는듯함 .
+	ID3D11InputLayout* pInputLayout = NULL;
+
+	//	input layout 값 설정하기 
+	// "POS" 같은 경우에는 struct vs_in 구조체 안에 있는 데이터
+	// float3 position_local : POS; 에 POS Semantic 과 matching 이 되어야 함. 
+	// 그리고 float3 같은 데이터 타입은 DXGI_FORMAT_R32G32B32_FLOAT 타입과 매칭됨. 
+	// 예를들어 float4 라면은 DXGI_FORMAT_R32G32B32A32_FLOAT 타입이 사용이 됨.  
+	D3D11_INPUT_ELEMENT_DESC inputElementDesc[] = {
+		{ "POS" , 0 , DXGI_FORMAT_R32G32B32_FLOAT, 0 , 0  , D3D11_INPUT_PER_VERTEX_DATA, 0 },
+		/* 다음 설정값 들은 흔히 사용되는 것 이기에 일단 주석 처리.
+			 D3D11_APPEND_ALIGNED_ELEMENT  같은 경우에는 , "starts after the previous element"  라는 의미임.
+		{"COL" , 0 , DXGI_FORMAT_R32G32B32_FLOAT , 0 , D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA , 0 },
+		{"NOR" , 0 , DXGI_FORMAT_R32G32B32_FLOAT , 0 , D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA , 0 },
+		{"TEX" , 0 , DXGI_FORMAT_R32G32B32_FLOAT , 0 , D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA , 0 },
+		*/
+	};
+
+	hr = pDevice->CreateInputLayout(
+		inputElementDesc,
+		ARRAYSIZE(inputElementDesc),
+		pVsBlob->GetBufferPointer(),
+		pVsBlob->GetBufferSize(),
+		&pInputLayout);
+
+	assert(SUCCEEDED(hr));
 }
 
 HRESULT CompileShader(LPCWSTR shaderFileName, LPCSTR entryPoint, LPCSTR target, UINT flags, ID3DBlob** ppCode, ID3DBlob** ppErrorBlob)
