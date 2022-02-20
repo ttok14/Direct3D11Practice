@@ -20,6 +20,7 @@
 
 // ** 함수 전방선언 **//
 void InitializeDirect3D();
+void ReleaseResources();
 void SetupShader();
 void ShaderCompileAndCreate(ID3DBlob** ppVsBlob, ID3DBlob** ppPsBlob, ID3DBlob** ppErrorBlob, ID3D11VertexShader** ppVertexShader, ID3D11PixelShader** ppPixelShader);
 HRESULT CompileShader(LPCWSTR shaderFileName, LPCSTR entryPoint, LPCSTR target, UINT flags, ID3DBlob** ppCode, ID3DBlob** ppErrorBlob);
@@ -48,8 +49,34 @@ ID3D11DeviceContext* pDeviceContext = NULL;
 // 다음 Frame 위해 드로잉이 되고 있는 BackBuffer 등 렌더링 관련 여러 Buffer 들의 그룹을 
 // SwapChain 이라함 
 IDXGISwapChain* pSwapChain = NULL;
-// ??
+// BackBuffer 를 RenderTarget 으로 사용하기 위한 파생 클래스 
+// 즉 텍스쳐 한장을 어떻게 사용하느냐 ? -> RenderTarget 으로 사용한다
+//		=> ID3D11RenderTargetView 제공 
 ID3D11RenderTargetView* pRenderTargetView = NULL;
+// Input assemble stage 용 객체 
+ID3D11InputLayout* pInputLayout = NULL;
+
+// Vertex Buffer 
+ID3D11Buffer* pVertexBuffer = NULL;
+
+// 각각의 Vertex 의 byte 크기
+	// 현시점 float3 position 하나면 되니까 float 3 개.
+UINT vertex_stride = 3 * sizeof(float);
+// Vertex 가 buffer 로 부터 읽힐때 Reading 을 시작할 byte offset 
+// 현시점 처음부터 Read 하면 되기 때문에 offset 은 0 
+UINT vertex_offset = 0;
+// Vertex 개수
+UINT  vertex_count = 3;
+
+// Blob 은 Binary Large Object 를 의미
+ID3DBlob* pVsBlob = NULL;
+ID3DBlob* pPsBlob = NULL;
+ID3DBlob* errorBlob = NULL;
+
+// Vertex Shader 
+ID3D11VertexShader* pVertexShader = NULL;
+// Pixel Shader 
+ID3D11PixelShader* pPixelShader = NULL;
 
 HWND g_hWnd;
 
@@ -76,8 +103,18 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 	HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_DIRECT3D11TOYPROJECT));
 
+	//======= 초기 세팅 관련 ======//
+
+	// Direct 초기화
+	// Device , DeviceContext, SwapChain, RenderTarget View 설정 등..
 	InitializeDirect3D();
+	// Shader 세팅 
+	// Shader 컴파일 및 생성 등..
 	SetupShader();
+	// Vertex Buffer 생성 
+	CreateVertexBuffer(&pVertexBuffer);
+
+	//========================== ==//
 
 	MSG msg = {};
 
@@ -93,10 +130,64 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 		if (msg.message == WM_QUIT)
 		{
+			ReleaseResources();
 			break;
 		}
 
 		/*** TODO: 이 위치에서 Direct3D 로 Rendering 수행 ***/
+		float background_color[4] = {
+			0x64 / 255.0f ,
+			0x95 / 255.0f,
+			0xED / 255.0f,
+			1.0f };
+
+		// RenderTargetView (BackBuffer) 를 해당 Color 로 Clear
+		//		=> Depth / Stencil 도 Clear 하려면 ClearDepthStencilView() 사용하면 됨.
+		pDeviceContext->ClearRenderTargetView(pRenderTargetView, background_color);
+
+		RECT winRect;
+		GetClientRect(g_hWnd, &winRect);
+
+		D3D11_VIEWPORT viewport = {
+			0.0f,
+			0.0f,
+			(FLOAT)(winRect.right - winRect.left),
+			(FLOAT)(winRect.bottom - winRect.top),
+			0.0f,
+			1.0f
+		};
+
+		// Window 의 크기를 가져온 후에 Resteriser 에 Viewport 설정 
+		pDeviceContext->RSSetViewports(1, &viewport);
+
+		// Output Merger (OM) Stage 는 최종 Pixel 색상을 Generate 하는 Stage 임. 
+		// 이 Stage 에서는 여러 정보들이 사용이 되는데 , 이 중 하나가
+		// Render Target 임 . 그 외에도 Depth / Stencil Test 관련이나 
+		// Pixel Shader 에서 반환된 색상이나 , Color Blending 등이 있음 .
+
+		// 여기서 해당 Render Target 을 설정함
+		// Depth Testing 가 추가된다면 OMSetDepthStencilState 메서드 사용하면 됨. 
+		pDeviceContext->OMSetRenderTargets(1, &pRenderTargetView, NULL);
+
+		// IA (Input Assembler)
+
+		// Rendering 을 하기 전, Input Assembler 에 드로잉할 Vertex Buffer 로 업데이트 (memory layout 도)
+		//		=> 해당 Vertex Buffer 에서 Vertex Shader 로 어떻게 Vertex Data 를 전달해야 하는지 알게 하기 위함
+		// D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST 은 Vertex 3 개가 하나의 Triangle 을 이룬다는 것을 의미
+		pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		pDeviceContext->IASetInputLayout(pInputLayout);
+		// 드로잉을 원하는 Vertex Buffer 를 설정
+		// Input assembler 가 해당 Buffer 의 memory 를 읽기위한 관련 값도 같이 설정
+		pDeviceContext->IASetVertexBuffers(
+			0,
+			1,
+			&pVertexBuffer,
+			&vertex_stride,
+			&vertex_offset
+		);
+
+		pDeviceContext->VSSetShader(pVertexShader, NULL, 0);
+		pDeviceContext->PSSetShader(pPixelShader, NULL, 0);
 	}
 
 	return (int)msg.wParam;
@@ -154,42 +245,122 @@ void InitializeDirect3D()
 	// 참고 - #include <assert.h> 포함해야함
 	assert(hr == S_OK && pSwapChain && pDevice && pDeviceContext);
 
-	// Here I have added extra debug output to the function flags 
-	// when the program is built in debug mode. If all went well, 
-	// you should be able to now compile and run it, without an assertion 
-	// triggering. Otherwise check the parameter values carefully. 
-	ID3D11Texture2D* framebuffer;
-	// Direct3D 에서 드로잉 결과물 이미지들은 Render Targets 라고 불림 
-	// SwapChain 에서 View Pointer 를 가져올 수가 있음.
+	ID3D11Texture2D* pBackbuffer;
+
+	// 생성된 SwapChain 의 BackBuffer 를 가져옴 ( https://vsts2010.tistory.com/517 참고 )
+
+	// * BackBuffer 도 사실 그냥 Texture 한 장임. *
+	// __uuidof() 같은 경우에는 COM interface 나 class 등 들어가게 되면
+	// 해당 Type 을 내부적으로 찾아서 guid 를 반화냏줌.
+	// 이 GUID 는 Direct3D 의 programming model 인 COM 이 내부적으로
+	// 타입들을 관리/식별 하기 위한 방법임. 
+	//		=> e.g. IID_ID3D10Texture2D 를 보면 COM 이 ID3D10Texture2D 을 식별하는
+	//				GUID 를 확인 가능. 기타 여러 타입들도 그들만의 Guid 를 가지고 있음.
+	//				그리고 Guid 는 엄청 많은 숫자로 이루어져 있기 때문에 이걸 외우는 미친짓 대신
+	//				__uuidof() 라는 operator 로 쉽게 가져올수 있게끔 하는거임.
 	hr = pSwapChain->GetBuffer(
-		0,
-		__uuidof(ID3D11Texture2D),
-		(void**)&framebuffer
+		0,				// BackBuffer 의 번호 (Index)  
+		__uuidof(ID3D11Texture2D),			// BackBuffer 에 접근하는 Interface guid 
+		(void**)&pBackbuffer			// 반환될 BackBuffer 를 저장할 더블 포인터
 	);
 
 	assert(SUCCEEDED(hr));
 
-	hr = pDevice->CreateRenderTargetView(framebuffer, 0, &pRenderTargetView);
-	// COM 오브젝트들은 객체의 할당에 있어서 Reference Counting 을 사용하기 때문에 
-	// 위에서 발생한 Ref 카운트 증가를 하나 깍아주기 위해 Release() 를 호출함. 
-	framebuffer->Release();
+	// 실제 화면에 렌더링되는 거는 Device 에 설정된 Render Target 임 
+	// 즉 , 여기서 해당 BackBuffer 를 Render Target 으로 설정해서 Back Buffer 에 
+	// 렌더링할 수 있게 설정 . 
+	// 즉, 본래의 자원인 BackBuffer Texture 를 RenderTarget 으로 사용하기 위한 
+	// 처리라고 할 수있음.
+	// 여기서 Direct 의 특징이 드러나는데, 
+
+	// ** 즉 , 같은 자원을 어떻게 사용하느냐에 따라 
+	// 별도의 파생 Interface / Class 가 존재한다라는 부분임. ** 
+
+	// 여기서는 Texture 인 BackBuffer 를 Render Target 으로 사용할 것이기 때문에 
+	// ** Render Target 을 Create 하는데, 결국 애도 본래의 자원은 BackBuffer 의
+	// Texture 라는 것임. **
+	hr = pDevice->CreateRenderTargetView(pBackbuffer, 0, &pRenderTargetView);
+
+	// 해당 BackBuffer 로 RenderTarget View 를 생성했으므로 , 앞으로 RenderTargetView 로 
+	// 처리함. 즉 기존 BackBuffer 해제 . (reference Count decrement)
+	pBackbuffer->Release();
 
 	assert(SUCCEEDED(hr));
+}
+
+// 각종 자원 해제 
+void ReleaseResources()
+{
+	if (pDevice)
+	{
+		pDevice->Release();
+		pDevice = NULL;
+	}
+
+	if (pDeviceContext)
+	{
+		pDeviceContext->Release();
+		pDeviceContext = NULL;
+	}
+
+	if (pSwapChain)
+	{
+		pSwapChain->Release();
+		pSwapChain = NULL;
+	}
+
+	if (pRenderTargetView)
+	{
+		pRenderTargetView->Release();
+		pRenderTargetView = NULL;
+	}
+
+	if (pVsBlob)
+	{
+		pVsBlob->Release();
+		pVsBlob = NULL;
+
+	}
+	if (pPsBlob)
+	{
+		pPsBlob->Release();
+		pPsBlob = NULL;
+	}
+
+	if (errorBlob)
+	{
+		errorBlob->Release();
+		errorBlob = NULL;
+	}
+
+	if (pVertexShader)
+	{
+		pVertexShader->Release();
+		pVertexShader = NULL;
+	}
+
+	if (pPixelShader)
+	{
+		pPixelShader->Release();
+		pPixelShader = NULL;
+	}
+
+	if (pInputLayout)
+	{
+		pInputLayout->Release();
+		pInputLayout = NULL;
+	}
+
+	if (pVertexBuffer)
+	{
+		pVertexBuffer->Release();
+		pVertexBuffer = NULL;
+	}
 }
 
 // shaders.hlsl 참고 (project path 상에 위치)
 void SetupShader()
 {
-	// Blob 은 Binary Large Object 를 의미
-	ID3DBlob* pVsBlob = NULL;
-	ID3DBlob* pPsBlob = NULL;
-	ID3DBlob* errorBlob = NULL;
-
-	ID3D11VertexShader* pVertexShader = NULL;
-	ID3D11PixelShader* pPixelShader = NULL;
-
-	ID3D11Buffer* pVertexBuffer = NULL;
-
 	// Shader 를 Compile 
 	//	=> Blob
 	// Shader 를 생성 
@@ -197,11 +368,7 @@ void SetupShader()
 	ShaderCompileAndCreate(&pVsBlob, &pPsBlob, &errorBlob, &pVertexShader, &pPixelShader);
 
 	// ======= :: Input Layout 생성 :: =========
-	ID3D11InputLayout* pInputLayout = NULL;
 	SetupShaderInputLayout(pVsBlob, &pInputLayout);
-
-	//=======:: Vertex Buffer 생성하기 :: ========
-	CreateVertexBuffer(&pVertexBuffer);
 }
 
 // Shader Compile 및 Create 를 해서 내보냄 
@@ -317,6 +484,7 @@ void SetupShaderInputLayout(ID3DBlob* pVsBlob, ID3D11InputLayout** ppInputLayout
 	assert(SUCCEEDED(hr));
 }
 
+//=======:: Vertex Buffer 생성하기 :: ========
 void CreateVertexBuffer(ID3D11Buffer** ppVertexBuffer)
 {
 	// Direct3D 는 Default 로 clock wise 즉 시계 방향으로 구성된 vertex 를 visible 판정함.
@@ -332,12 +500,12 @@ void CreateVertexBuffer(ID3D11Buffer** ppVertexBuffer)
 
 	// 각각의 Vertex 의 byte 크기
 	// 현시점 float3 position 하나면 되니까 float 3 개.
-	UINT vertex_stride = 3 * sizeof(float);
+	vertex_stride = 3 * sizeof(float);
 	// Vertex 가 buffer 로 부터 읽힐때 Reading 을 시작할 byte offset 
 	// 현시점 처음부터 Read 하면 되기 때문에 offset 은 0 
-	UINT vertex_offset = 0;
+	vertex_offset = 0;
 	// Vertex 개수
-	UINT vertex_count = 3;
+	vertex_count = 3;
 
 	D3D11_BUFFER_DESC vertex_buffer_desc = {};
 	vertex_buffer_desc.ByteWidth = sizeof(vertex_data_array);
