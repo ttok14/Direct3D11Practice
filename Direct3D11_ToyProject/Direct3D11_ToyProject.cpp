@@ -21,7 +21,10 @@
 // ** 함수 전방선언 **//
 void InitializeDirect3D();
 void SetupShader();
+void ShaderCompileAndCreate(ID3DBlob** ppVsBlob, ID3DBlob** ppPsBlob, ID3DBlob** ppErrorBlob, ID3D11VertexShader** ppVertexShader, ID3D11PixelShader** ppPixelShader);
 HRESULT CompileShader(LPCWSTR shaderFileName, LPCSTR entryPoint, LPCSTR target, UINT flags, ID3DBlob** ppCode, ID3DBlob** ppErrorBlob);
+void SetupShaderInputLayout(ID3DBlob* pVsBlob, ID3D11InputLayout** ppInputLayout);
+void CreateVertexBuffer(ID3D11Buffer** ppVertexBuffer);
 
 // =======:: 전역 변수 ::=========
 
@@ -177,86 +180,73 @@ void InitializeDirect3D()
 // shaders.hlsl 참고 (project path 상에 위치)
 void SetupShader()
 {
+	// Blob 은 Binary Large Object 를 의미
+	ID3DBlob* pVsBlob = NULL;
+	ID3DBlob* pPsBlob = NULL;
+	ID3DBlob* errorBlob = NULL;
+
+	ID3D11VertexShader* pVertexShader = NULL;
+	ID3D11PixelShader* pPixelShader = NULL;
+
+	ID3D11Buffer* pVertexBuffer = NULL;
+
+	// Shader 를 Compile 
+	//	=> Blob
+	// Shader 를 생성 
+	//	=> Vertex(Pixel)Shader
+	ShaderCompileAndCreate(&pVsBlob, &pPsBlob, &errorBlob, &pVertexShader, &pPixelShader);
+
+	// ======= :: Input Layout 생성 :: =========
+	ID3D11InputLayout* pInputLayout = NULL;
+	SetupShaderInputLayout(pVsBlob, &pInputLayout);
+
+	//=======:: Vertex Buffer 생성하기 :: ========
+	CreateVertexBuffer(&pVertexBuffer);
+}
+
+// Shader Compile 및 Create 를 해서 내보냄 
+void ShaderCompileAndCreate(ID3DBlob** ppVsBlob, ID3DBlob** ppPsBlob, ID3DBlob** ppErrorBlob, ID3D11VertexShader** ppVertexShader, ID3D11PixelShader** ppPixelShader)
+{
 	UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
 
 #if defined ( DEBUG ) || defined (  _DEBUG ) 
 	flags |= D3DCOMPILE_DEBUG;
 #endif 
 
-	// Blob 은 Binary Large Object 를 의미
-	ID3DBlob* pVsBlob = NULL;
-	ID3DBlob* pPsBlob = NULL;
-	ID3DBlob* errorBlob = NULL;
-
 	// VertexShader, PixelShader 를 Compile 해서 blob(Big binary object) 형태로 캐싱
 	//			=> D3DCompileFromFile 메서드가 수행 
 	// 해당 File 은 현재 Project 의 directory 상에 위치하면 됨 
 	LPCWSTR shaderFileName = L"shaders.hlsl";
-
-	ID3D11VertexShader* pVertexShader = NULL;
-	ID3D11PixelShader* pPixelShader = NULL;
-
 	HRESULT hr;
 
-	// Vertex Shader 컴파일 
-	hr = CompileShader(L"shaders.hlsl", "vs_main", "vs_5_0", flags, &pVsBlob, &errorBlob);
+	// ===== :: Vertex Shader 컴파일 :: ======
+	hr = CompileShader(L"shaders.hlsl", "vs_main", "vs_5_0", flags, ppVsBlob, ppErrorBlob);
 	if (SUCCEEDED(hr))
 	{
-		// 컴파일에 성공하였으면 Shader 객체 생성 
+		// ===== :: Vertex Shader 생성 :: ======
 		hr = pDevice->CreateVertexShader(
-			pVsBlob->GetBufferPointer(),
-			pVsBlob->GetBufferSize(),
+			(*ppVsBlob)->GetBufferPointer(),
+			(*ppVsBlob)->GetBufferSize(),
 			NULL,
-			&pVertexShader);
+			ppVertexShader);
 	}
 
 	// 실패 처리 
 	assert(SUCCEEDED(hr));
 
-	// Pixel Shader 생성 
-	hr = CompileShader(L"shaders.hlsl", "ps_main", "ps_5_0", flags, &pPsBlob, &errorBlob);
+	// ===== :: Pixel Shader 컴파일 :: ======
+	hr = CompileShader(L"shaders.hlsl", "ps_main", "ps_5_0", flags, ppPsBlob, ppErrorBlob);
 	if (SUCCEEDED(hr))
 	{
+		// ======= :: Pixel Shader 생성 :: ========
 		hr = pDevice->CreatePixelShader(
-			pPsBlob->GetBufferPointer(),
-			pPsBlob->GetBufferSize(),
+			(*ppPsBlob)->GetBufferPointer(),
+			(*ppPsBlob)->GetBufferSize(),
 			NULL,
-			&pPixelShader);
+			ppPixelShader);
 	}
 
 	// 실패 처리 
-	assert(SUCCEEDED(hr));
-
-	// Input Layout 생성 
-	//		=> Input Assembler stage (IA stage) 에서 Vertex Shader 를 위해 user 즉 프로그래머가 
-	//			primitve data 를 fill 한 buffer 로 부터 semantic 을 attach 하거나 , Shader 의 여러 Stage 들에서 
-	//			사용 가능한 형태의 primitive 로 조립을 시키는데 , 이때 user 가 fill 한 buffer 에 있는 
-	//			vertex data 가 어떻게 Vertex Shader 에 Mapping 이 되어야 하는지에 대한 처리임 . 
-	//		=> 즉 , vertex shader 에서 input 값으로 들어가는 값에 대한 설정이므로 Input layout 이라 불리는듯함 .
-	ID3D11InputLayout* pInputLayout = NULL;
-
-	//	input layout 값 설정하기 
-	// "POS" 같은 경우에는 struct vs_in 구조체 안에 있는 데이터
-	// float3 position_local : POS; 에 POS Semantic 과 matching 이 되어야 함. 
-	// 그리고 float3 같은 데이터 타입은 DXGI_FORMAT_R32G32B32_FLOAT 타입과 매칭됨. 
-	// 예를들어 float4 라면은 DXGI_FORMAT_R32G32B32A32_FLOAT 타입이 사용이 됨.  
-	D3D11_INPUT_ELEMENT_DESC inputElementDesc[] = {
-		{ "POS" , 0 , DXGI_FORMAT_R32G32B32_FLOAT, 0 , 0  , D3D11_INPUT_PER_VERTEX_DATA, 0 },
-		/* 다음 설정값 들은 흔히 사용되는 것 이기에 일단 주석 처리.
-			 D3D11_APPEND_ALIGNED_ELEMENT  같은 경우에는 , "starts after the previous element"  라는 의미임.
-		{"COL" , 0 , DXGI_FORMAT_R32G32B32_FLOAT , 0 , D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA , 0 },
-		{"NOR" , 0 , DXGI_FORMAT_R32G32B32_FLOAT , 0 , D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA , 0 },
-		{"TEX" , 0 , DXGI_FORMAT_R32G32B32_FLOAT , 0 , D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA , 0 },
-		*/
-	};
-
-	hr = pDevice->CreateInputLayout(
-		inputElementDesc,
-		ARRAYSIZE(inputElementDesc),
-		pVsBlob->GetBufferPointer(),
-		pVsBlob->GetBufferSize(),
-		&pInputLayout);
-
 	assert(SUCCEEDED(hr));
 }
 
@@ -293,6 +283,82 @@ HRESULT CompileShader(LPCWSTR shaderFileName, LPCSTR entryPoint, LPCSTR target, 
 	}
 
 	return hr;
+}
+
+//		=> Input Assembler stage (IA stage) 에서 Vertex Shader 를 위해 user 즉 프로그래머가 
+//			primitve data 를 fill 한 buffer 로 부터 semantic 을 attach 하거나 , Shader 의 여러 Stage 들에서 
+//			사용 가능한 형태의 primitive 로 조립을 시키는데 , 이때 user 가 fill 한 buffer 에 있는 
+//			vertex data 가 어떻게 Vertex Shader 에 Mapping 이 되어야 하는지에 대한 처리임 . 
+//		=> 즉 , vertex shader 에서 input 값으로 들어가는 값에 대한 설정이므로 Input layout 이라 불리는듯함 .
+void SetupShaderInputLayout(ID3DBlob* pVsBlob, ID3D11InputLayout** ppInputLayout)
+{
+	//	input layout 값 설정하기 
+	// "POS" 같은 경우에는 struct vs_in 구조체 안에 있는 데이터
+	// float3 position_local : POS; 에 POS Semantic 과 matching 이 되어야 함. 
+	// 그리고 float3 같은 데이터 타입은 DXGI_FORMAT_R32G32B32_FLOAT 타입과 매칭됨. 
+	// 예를들어 float4 라면은 DXGI_FORMAT_R32G32B32A32_FLOAT 타입이 사용이 됨.  
+	D3D11_INPUT_ELEMENT_DESC inputElementDesc[] = {
+		{ "POS" , 0 , DXGI_FORMAT_R32G32B32_FLOAT, 0 , 0  , D3D11_INPUT_PER_VERTEX_DATA, 0 },
+		/* 다음 설정값 들은 흔히 사용되는 것 이기에 일단 주석 처리.
+			 D3D11_APPEND_ALIGNED_ELEMENT  같은 경우에는 , "starts after the previous element"  라는 의미임.
+		{"COL" , 0 , DXGI_FORMAT_R32G32B32_FLOAT , 0 , D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA , 0 },
+		{"NOR" , 0 , DXGI_FORMAT_R32G32B32_FLOAT , 0 , D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA , 0 },
+		{"TEX" , 0 , DXGI_FORMAT_R32G32B32_FLOAT , 0 , D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA , 0 },
+		*/
+	};
+
+	HRESULT hr = pDevice->CreateInputLayout(
+		inputElementDesc,
+		ARRAYSIZE(inputElementDesc),
+		pVsBlob->GetBufferPointer(),
+		pVsBlob->GetBufferSize(),
+		ppInputLayout);
+
+	assert(SUCCEEDED(hr));
+}
+
+void CreateVertexBuffer(ID3D11Buffer** ppVertexBuffer)
+{
+	// Direct3D 는 Default 로 clock wise 즉 시계 방향으로 구성된 vertex 를 visible 판정함.
+	// 즉 반 시계 방향으로 되면 back face 로 간주하고 Culling 시킴. 
+	// 그렇기에 Vertex Buffer 에서 Vertex 를 설정해줄때 일단 시계 방향으로 설정한다.
+
+	// Vertex Position 설정 
+	float vertex_data_array[] = {
+		0.0f,		0.5f,			0.0f,	// point at top
+		0.5f,		-0.5f,		0.0f, // point at bottom-right
+		-0.5f,	-0.5,			0.0f, // point at bottom-left
+	};
+
+	// 각각의 Vertex 의 byte 크기
+	// 현시점 float3 position 하나면 되니까 float 3 개.
+	UINT vertex_stride = 3 * sizeof(float);
+	// Vertex 가 buffer 로 부터 읽힐때 Reading 을 시작할 byte offset 
+	// 현시점 처음부터 Read 하면 되기 때문에 offset 은 0 
+	UINT vertex_offset = 0;
+	// Vertex 개수
+	UINT vertex_count = 3;
+
+	D3D11_BUFFER_DESC vertex_buffer_desc = {};
+	vertex_buffer_desc.ByteWidth = sizeof(vertex_data_array);
+	// D3D11_USAGE_DEFAULT 은 수정 가능한 Buffer 를 만듬 
+	//		=> D3D11_USAGE_IMMUTABLE 옵션 같은 경우에는
+	//				수정이 불가능한 대신 Optimization 에 유리함
+	vertex_buffer_desc.Usage = D3D11_USAGE_DEFAULT;
+	vertex_buffer_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+
+	// Vertex Buffer Data Array 를 가지고 있을 구조체 
+	D3D11_SUBRESOURCE_DATA sr_data = { 0 };
+
+	sr_data.pSysMem = vertex_data_array;
+
+	HRESULT hr = pDevice->CreateBuffer(
+		&vertex_buffer_desc,
+		&sr_data,
+		ppVertexBuffer
+	);
+
+	assert(SUCCEEDED(hr));
 }
 
 //
