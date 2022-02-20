@@ -20,6 +20,8 @@
 
 // ** 함수 전방선언 **//
 void InitializeDirect3D();
+void Render();
+
 void ReleaseResources();
 void SetupShader();
 void ShaderCompileAndCreate(ID3DBlob** ppVsBlob, ID3DBlob** ppPsBlob, ID3DBlob** ppErrorBlob, ID3D11VertexShader** ppVertexShader, ID3D11PixelShader** ppPixelShader);
@@ -134,60 +136,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 			break;
 		}
 
-		/*** TODO: 이 위치에서 Direct3D 로 Rendering 수행 ***/
-		float background_color[4] = {
-			0x64 / 255.0f ,
-			0x95 / 255.0f,
-			0xED / 255.0f,
-			1.0f };
-
-		// RenderTargetView (BackBuffer) 를 해당 Color 로 Clear
-		//		=> Depth / Stencil 도 Clear 하려면 ClearDepthStencilView() 사용하면 됨.
-		pDeviceContext->ClearRenderTargetView(pRenderTargetView, background_color);
-
-		RECT winRect;
-		GetClientRect(g_hWnd, &winRect);
-
-		D3D11_VIEWPORT viewport = {
-			0.0f,
-			0.0f,
-			(FLOAT)(winRect.right - winRect.left),
-			(FLOAT)(winRect.bottom - winRect.top),
-			0.0f,
-			1.0f
-		};
-
-		// Window 의 크기를 가져온 후에 Resteriser 에 Viewport 설정 
-		pDeviceContext->RSSetViewports(1, &viewport);
-
-		// Output Merger (OM) Stage 는 최종 Pixel 색상을 Generate 하는 Stage 임. 
-		// 이 Stage 에서는 여러 정보들이 사용이 되는데 , 이 중 하나가
-		// Render Target 임 . 그 외에도 Depth / Stencil Test 관련이나 
-		// Pixel Shader 에서 반환된 색상이나 , Color Blending 등이 있음 .
-
-		// 여기서 해당 Render Target 을 설정함
-		// Depth Testing 가 추가된다면 OMSetDepthStencilState 메서드 사용하면 됨. 
-		pDeviceContext->OMSetRenderTargets(1, &pRenderTargetView, NULL);
-
-		// IA (Input Assembler)
-
-		// Rendering 을 하기 전, Input Assembler 에 드로잉할 Vertex Buffer 로 업데이트 (memory layout 도)
-		//		=> 해당 Vertex Buffer 에서 Vertex Shader 로 어떻게 Vertex Data 를 전달해야 하는지 알게 하기 위함
-		// D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST 은 Vertex 3 개가 하나의 Triangle 을 이룬다는 것을 의미
-		pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		pDeviceContext->IASetInputLayout(pInputLayout);
-		// 드로잉을 원하는 Vertex Buffer 를 설정
-		// Input assembler 가 해당 Buffer 의 memory 를 읽기위한 관련 값도 같이 설정
-		pDeviceContext->IASetVertexBuffers(
-			0,
-			1,
-			&pVertexBuffer,
-			&vertex_stride,
-			&vertex_offset
-		);
-
-		pDeviceContext->VSSetShader(pVertexShader, NULL, 0);
-		pDeviceContext->PSSetShader(pPixelShader, NULL, 0);
+		Render();
 	}
 
 	return (int)msg.wParam;
@@ -286,6 +235,78 @@ void InitializeDirect3D()
 	pBackbuffer->Release();
 
 	assert(SUCCEEDED(hr));
+}
+
+void Render()
+{
+	float background_color[4] = {
+	0x64 / 255.0f ,
+	0x95 / 255.0f,
+	0xED / 255.0f,
+	1.0f };
+
+	// RenderTargetView (BackBuffer) 를 해당 Color 로 Clear
+	//		=> Depth / Stencil 도 Clear 하려면 ClearDepthStencilView() 사용하면 됨.
+	pDeviceContext->ClearRenderTargetView(pRenderTargetView, background_color);
+
+	RECT winRect;
+	GetClientRect(g_hWnd, &winRect);
+
+	D3D11_VIEWPORT viewport = {
+		0.0f,
+		0.0f,
+		(FLOAT)(winRect.right - winRect.left),
+		(FLOAT)(winRect.bottom - winRect.top),
+		0.0f,
+		1.0f
+	};
+
+	// Window 의 크기를 가져온 후에 Resteriser 에 Viewport 설정 
+	pDeviceContext->RSSetViewports(1, &viewport);
+
+	// Output Merger (OM) Stage 는 최종 Pixel 색상을 Generate 하는 Stage 임. 
+	// 이 Stage 에서는 여러 정보들이 사용이 되는데 , 이 중 하나가
+	// Render Target 임 . 그 외에도 Depth / Stencil Test 관련이나 
+	// Pixel Shader 에서 반환된 색상이나 , Color Blending 등이 있음 .
+
+	// 여기서 해당 Render Target 을 설정함
+	// Depth Testing 가 추가된다면 OMSetDepthStencilState 메서드 사용하면 됨. 
+	pDeviceContext->OMSetRenderTargets(1, &pRenderTargetView, NULL);
+
+	// IA (Input Assembler)
+
+	// Rendering 을 하기 전, Input Assembler 에 드로잉할 Vertex Buffer 로 업데이트 (memory layout 도)
+	//		=> 해당 Vertex Buffer 에서 Vertex Shader 로 어떻게 Vertex Data 를 전달해야 하는지 알게 하기 위함
+	// D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST 은 Vertex 3 개가 하나의 Triangle 을 이룬다는 것을 의미
+	/***** Input Assembler (map how the vertex shader inputs should be read from vertex buffer) ******/
+	pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	pDeviceContext->IASetInputLayout(pInputLayout);
+	// 드로잉을 원하는 Vertex Buffer 를 설정
+	// Input assembler 가 해당 Buffer 의 memory 를 읽기위한 관련 값도 같이 설정
+	pDeviceContext->IASetVertexBuffers(
+		0,
+		1,
+		&pVertexBuffer,
+		&vertex_stride,
+		&vertex_offset
+	);
+
+	// Shader 를 현재 Context 에 설정 
+	/*** set vertex shader to use and pixel shader to use, and constant buffers for each ***/
+	pDeviceContext->VSSetShader(pVertexShader, NULL, 0);
+	pDeviceContext->PSSetShader(pPixelShader, NULL, 0);
+
+	// Draw 메서드를 호출하면 Pipeline 이 현재 설정된 State 들을 기반으로 
+	// 현재 설정된 Vertex Buffer 를 드로잉 수행
+	// 여기서는 몇 개를 그릴지에 대해 지정 
+	/*** draw the vertex buffer with the shaders ****/
+	pDeviceContext->Draw(vertex_count, 0);
+
+	// 지금까지 RenderTarget(BackBuffer) 에다가 드로잉을 수행했으니 이제
+	// SwapChain 에게 현재 사용자가 보고있는 FrameBuffer 와 드로잉을 마친 BackBuffer 를
+	// 교체(Swap) 하라고 명령. 
+	/**** swap the back and front buffers (show the frame we just drew) ****/
+	pSwapChain->Present(1, 0);
 }
 
 // 각종 자원 해제 
