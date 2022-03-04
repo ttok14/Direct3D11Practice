@@ -8,6 +8,8 @@
 #include <d3d11.h>										// D3D interface
 #include <dxgi.h>											// DirectX driver interface
 #include <d3dcompiler.h>								// shader compiler
+#include <math.h>
+#include <DirectXMath.h>
 
 // Direct3D11 라이브러리 코드에서 참조하기
 //		=> 프로젝트 속성에서 링크로 설정하는 방법도 있음. 
@@ -18,6 +20,10 @@
 
 #define MAX_LOADSTRING 100
 
+// DirectXMath.h 라이브러리에 있음 
+// XMFLOAT4X4 같은 데이터형들 포함 
+using namespace DirectX;
+
 // ** 함수 전방선언 **//
 void InitializeDirect3D();
 void Render();
@@ -27,7 +33,8 @@ void SetupShader();
 void ShaderCompileAndCreate(ID3DBlob** ppVsBlob, ID3DBlob** ppPsBlob, ID3DBlob** ppErrorBlob, ID3D11VertexShader** ppVertexShader, ID3D11PixelShader** ppPixelShader);
 HRESULT CompileShader(LPCWSTR shaderFileName, LPCSTR entryPoint, LPCSTR target, UINT flags, ID3DBlob** ppCode, ID3DBlob** ppErrorBlob);
 void SetupShaderInputLayout(ID3DBlob* pVsBlob, ID3D11InputLayout** ppInputLayout);
-void CreateVertexBuffer(ID3D11Buffer** ppVertexBuffer);
+void CreateVertexIndexBuffer(ID3D11Buffer** ppVertexBuffer, ID3D11Buffer** ppIndexBuffer);
+void CreateConstantBuffer(ID3D11Buffer** ppConstantBuffer);
 
 // =======:: 전역 변수 ::=========
 
@@ -60,6 +67,21 @@ ID3D11InputLayout* pInputLayout = NULL;
 
 // Vertex Buffer 
 ID3D11Buffer* pVertexBuffer = NULL;
+// Index Buffer
+ID3D11Buffer* pIndexBuffer = NULL;
+// Constant buffer
+ID3D11Buffer* pConstantBuffer = NULL;
+
+struct VS_CONSTANT_BUFFER
+{
+	// DirectXMath.h 라이브러리에 DirectX namespace 에 존재 
+	XMFLOAT4X4 mWorldViewProj;
+	XMFLOAT4 vectorNeededByShader;
+	float floatNeededByShader01;
+	float fTime;
+	float floatNeededByShader02;
+	float floatNeededByShader03;
+} VS_CONSTANT_BUFFER;
 
 // 각각의 Vertex 의 byte 크기
 	// 현시점 float3 position 하나면 되니까 float 3 개.
@@ -114,7 +136,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	// Shader 컴파일 및 생성 등..
 	SetupShader();
 	// Vertex Buffer 생성 
-	CreateVertexBuffer(&pVertexBuffer);
+	CreateVertexIndexBuffer(&pVertexBuffer, &pIndexBuffer);
+	CreateConstantBuffer(&pConstantBuffer);
 
 	//========================== ==//
 
@@ -291,6 +314,8 @@ void Render()
 		&vertex_offset
 	);
 
+	pDeviceContext->IASetIndexBuffer(pIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
+
 	// Shader 를 현재 Context 에 설정 
 	/*** set vertex shader to use and pixel shader to use, and constant buffers for each ***/
 	pDeviceContext->VSSetShader(pVertexShader, NULL, 0);
@@ -300,7 +325,7 @@ void Render()
 	// 현재 설정된 Vertex Buffer 를 드로잉 수행
 	// 여기서는 몇 개를 그릴지에 대해 지정 
 	/*** draw the vertex buffer with the shaders ****/
-	pDeviceContext->Draw(vertex_count, 0);
+	pDeviceContext->DrawIndexed(6, 0, 0);// Draw(vertex_count, 0);
 
 	// 지금까지 RenderTarget(BackBuffer) 에다가 드로잉을 수행했으니 이제
 	// SwapChain 에게 현재 사용자가 보고있는 FrameBuffer 와 드로잉을 마친 BackBuffer 를
@@ -487,12 +512,11 @@ void SetupShaderInputLayout(ID3DBlob* pVsBlob, ID3D11InputLayout** ppInputLayout
 	// 예를들어 float4 라면은 DXGI_FORMAT_R32G32B32A32_FLOAT 타입이 사용이 됨.  
 	D3D11_INPUT_ELEMENT_DESC inputElementDesc[] = {
 		{ "POS" , 0 , DXGI_FORMAT_R32G32B32_FLOAT, 0 , 0  , D3D11_INPUT_PER_VERTEX_DATA, 0 },
-		/* 다음 설정값 들은 흔히 사용되는 것 이기에 일단 주석 처리.
-			 D3D11_APPEND_ALIGNED_ELEMENT  같은 경우에는 , "starts after the previous element"  라는 의미임.
-		{"COL" , 0 , DXGI_FORMAT_R32G32B32_FLOAT , 0 , D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA , 0 },
-		{"NOR" , 0 , DXGI_FORMAT_R32G32B32_FLOAT , 0 , D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA , 0 },
-		{"TEX" , 0 , DXGI_FORMAT_R32G32B32_FLOAT , 0 , D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA , 0 },
-		*/
+		//		 D3D11_APPEND_ALIGNED_ELEMENT  같은 경우에는 , "starts after the previous element"  라는 의미임.
+			{"COL" , 0 , DXGI_FORMAT_R32G32B32_FLOAT , 0 , D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA , 0 },
+			/* {"NOR" , 0 , DXGI_FORMAT_R32G32B32_FLOAT , 0 , D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA , 0 },
+			{"TEX" , 0 , DXGI_FORMAT_R32G32B32_FLOAT , 0 , D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA , 0 },
+			*/
 	};
 
 	HRESULT hr = pDevice->CreateInputLayout(
@@ -506,7 +530,7 @@ void SetupShaderInputLayout(ID3DBlob* pVsBlob, ID3D11InputLayout** ppInputLayout
 }
 
 //=======:: Vertex Buffer 생성하기 :: ========
-void CreateVertexBuffer(ID3D11Buffer** ppVertexBuffer)
+void CreateVertexIndexBuffer(ID3D11Buffer** ppVertexBuffer, ID3D11Buffer** ppIndexBuffer)
 {
 	// Direct3D 는 Default 로 clock wise 즉 시계 방향으로 구성된 vertex 를 visible 판정함.
 	// 즉 반 시계 방향으로 되면 back face 로 간주하고 Culling 시킴. 
@@ -514,9 +538,10 @@ void CreateVertexBuffer(ID3D11Buffer** ppVertexBuffer)
 
 	// Vertex Position 설정 
 	float vertex_data_array[] = {
-		0.0f,		0.5f,			0.0f,	// point at top
-		0.5f,		-0.5f,		0.0f, // point at bottom-right
-		-0.5f,	-0.5,			0.0f, // point at bottom-left
+		-0.2f,		0.2f,			0.0f,	// point at top
+		0.2f,		0.2f,		0.0f, // point at bottom-right
+		0.2f,	-0.2f,			0.0f, // point at bottom-left
+		-0.2f,	-0.2f,			0.0f, // point at bottom-left
 	};
 
 	// 각각의 Vertex 의 byte 크기
@@ -557,6 +582,39 @@ void CreateVertexBuffer(ID3D11Buffer** ppVertexBuffer)
 	);
 
 	assert(SUCCEEDED(hr));
+
+	// Index Buffer 생성하기 
+	unsigned int indicies[] = { 0,1,2 , 0,2,3 };
+
+	D3D11_BUFFER_DESC idxBufferDesc;
+	idxBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+	idxBufferDesc.ByteWidth = sizeof(unsigned int) * 6;
+	idxBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+	idxBufferDesc.CPUAccessFlags = 0;
+	idxBufferDesc.MiscFlags = 0;
+
+	D3D11_SUBRESOURCE_DATA initData;
+	initData.pSysMem = indicies;
+	initData.SysMemPitch = 0;
+	initData.SysMemSlicePitch = 0;
+
+	hr = pDevice->CreateBuffer(&idxBufferDesc, &initData, ppIndexBuffer);
+
+	assert(SUCCEEDED(hr));
+
+	pDeviceContext->IASetIndexBuffer(pIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
+
+	struct ConstantBuffer
+	{
+		struct
+		{
+			float size;
+		}transformation;
+	};
+}
+
+void CreateConstantBuffer(ID3D11Buffer** ppBuffer)
+{
 }
 
 //
