@@ -13,6 +13,15 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Camera">
+      <UniqueIdentifier>{9c92fdc7-7666-46a9-b606-6a0e0c1d1b5d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ProjectMain">
+      <UniqueIdentifier>{8a7fd489-95a9-4bc2-bd9b-9a6e32d64533}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="MyUtil">
+      <UniqueIdentifier>{0c2704c4-f33b-4e0f-9df4-318697e61917}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stdafx.h">
@@ -27,12 +36,30 @@
     <ClInclude Include="Direct3D11_ToyProject.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="ToyMain.h">
+      <Filter>ProjectMain</Filter>
+    </ClInclude>
+    <ClInclude Include="MyCamera.h">
+      <Filter>Camera</Filter>
+    </ClInclude>
+    <ClInclude Include="MyUtil.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="Direct3D11_ToyProject.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="ToyMain.cpp">
+      <Filter>ProjectMain</Filter>
+    </ClCompile>
+    <ClCompile Include="MyCamera.cpp">
+      <Filter>Camera</Filter>
+    </ClCompile>
+    <ClCompile Include="MyUtil.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>

@@ -11,6 +11,8 @@
 #include <math.h>
 #include <DirectXMath.h>
 
+#include "ToyMain.h"
+
 // Direct3D11 라이브러리 코드에서 참조하기
 //		=> 프로젝트 속성에서 링크로 설정하는 방법도 있음. 
 #pragma comment( lib, "user32" )					// link against the win32 library
@@ -71,6 +73,8 @@ ID3D11Buffer* pVertexBuffer = NULL;
 ID3D11Buffer* pIndexBuffer = NULL;
 // Constant buffer
 ID3D11Buffer* pConstantBuffer = NULL;
+
+ToyMain* pToyMain;
 
 struct VS_CONSTANT_BUFFER
 {
@@ -138,6 +142,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	// Vertex Buffer 생성 
 	CreateVertexIndexBuffer(&pVertexBuffer, &pIndexBuffer);
 	CreateConstantBuffer(&pConstantBuffer);
+
+	pToyMain = new ToyMain();
+	pToyMain->Setup(g_hWnd);
 
 	//========================== ==//
 
@@ -260,6 +267,7 @@ void InitializeDirect3D()
 	assert(SUCCEEDED(hr));
 }
 
+// Rendering 수행
 void Render()
 {
 	float background_color[4] = {
@@ -337,6 +345,13 @@ void Render()
 // 각종 자원 해제 
 void ReleaseResources()
 {
+	if (pToyMain)
+	{
+		pToyMain->Release();
+		delete pToyMain;
+		pToyMain = NULL;
+	}
+
 	if (pDevice)
 	{
 		pDevice->Release();

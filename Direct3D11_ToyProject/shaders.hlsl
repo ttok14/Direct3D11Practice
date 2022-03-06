@@ -1,6 +1,7 @@
 /* Vertex 속성들. Vertex Shader 의 Input 값으로 받게된다 */
 struct vs_in {
 	float3 position_local : POS;
+	float3 color : COL;
 };
 
 /* 
@@ -18,5 +19,5 @@ vs_out vs_main(vs_in input) {
 }
 
 float4 ps_main(vs_out input) : SV_TARGET {
-	return float4( 1.0, 0.0, 1.0, 1.0 ); 
+	return float4( 1.0, 0.0, 0.0, 1.0 ); 
 }
