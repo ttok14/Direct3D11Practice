@@ -87,14 +87,24 @@ struct VS_CONSTANT_BUFFER
 	float floatNeededByShader03;
 } VS_CONSTANT_BUFFER;
 
+//Vertex Structure and Vertex Layout (Input Layout)//
+struct VertexAttribute    //Overloaded Vertex Structure
+{
+	VertexAttribute() {}
+	VertexAttribute(float x, float y, float z,
+		float cr, float cg, float cb, float ca)
+		: pos(x, y, z), color(cr, cg, cb, ca) {}
+
+	XMFLOAT3 pos;
+	XMFLOAT4 color;
+};
+
 // 각각의 Vertex 의 byte 크기
-	// 현시점 float3 position 하나면 되니까 float 3 개.
-UINT vertex_stride = 3 * sizeof(float);
+//		e.g. float3 position 하나일때는 3 * sizeof(float) 
+UINT vertex_stride = sizeof(VertexAttribute);
 // Vertex 가 buffer 로 부터 읽힐때 Reading 을 시작할 byte offset 
-// 현시점 처음부터 Read 하면 되기 때문에 offset 은 0 
+//		e.g. 처음부터 Read 하면 되기 때문에 offset 은 0 
 UINT vertex_offset = 0;
-// Vertex 개수
-UINT  vertex_count = 3;
 
 // Blob 은 Binary Large Object 를 의미
 ID3DBlob* pVsBlob = NULL;
@@ -333,7 +343,7 @@ void Render()
 	// 현재 설정된 Vertex Buffer 를 드로잉 수행
 	// 여기서는 몇 개를 그릴지에 대해 지정 
 	/*** draw the vertex buffer with the shaders ****/
-	pDeviceContext->DrawIndexed(6, 0, 0);// Draw(vertex_count, 0);
+	pDeviceContext->DrawIndexed(6, 0, 0);
 
 	// 지금까지 RenderTarget(BackBuffer) 에다가 드로잉을 수행했으니 이제
 	// SwapChain 에게 현재 사용자가 보고있는 FrameBuffer 와 드로잉을 마친 BackBuffer 를
@@ -552,21 +562,19 @@ void CreateVertexIndexBuffer(ID3D11Buffer** ppVertexBuffer, ID3D11Buffer** ppInd
 	// 그렇기에 Vertex Buffer 에서 Vertex 를 설정해줄때 일단 시계 방향으로 설정한다.
 
 	// Vertex Position 설정 
-	float vertex_data_array[] = {
-		-0.2f,		0.2f,			0.0f,	// point at top
-		0.2f,		0.2f,		0.0f, // point at bottom-right
-		0.2f,	-0.2f,			0.0f, // point at bottom-left
-		-0.2f,	-0.2f,			0.0f, // point at bottom-left
+	VertexAttribute vertex_data_array[] = {
+		VertexAttribute(-1.0f, -1.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f),
+		VertexAttribute(-1.0f, +1.0f, -1.0f, 0.0f, 1.0f, 0.0f, 1.0f),
+		VertexAttribute(+1.0f, +1.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f),
+		VertexAttribute(+1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 0.0f, 1.0f),
+		VertexAttribute(-1.0f, -1.0f, +1.0f, 0.0f, 1.0f, 1.0f, 1.0f),
+		VertexAttribute(-1.0f, +1.0f, +1.0f, 1.0f, 1.0f, 1.0f, 1.0f),
+		VertexAttribute(+1.0f, +1.0f, +1.0f, 1.0f, 0.0f, 1.0f, 1.0f),
+		VertexAttribute(+1.0f, -1.0f, +1.0f, 1.0f, 0.0f, 0.0f, 1.0f),
 	};
 
-	// 각각의 Vertex 의 byte 크기
-	// 현시점 float3 position 하나면 되니까 float 3 개.
 	vertex_stride = 3 * sizeof(float);
-	// Vertex 가 buffer 로 부터 읽힐때 Reading 을 시작할 byte offset 
-	// 현시점 처음부터 Read 하면 되기 때문에 offset 은 0 
 	vertex_offset = 0;
-	// Vertex 개수
-	vertex_count = 3;
 
 	D3D11_BUFFER_DESC vertex_buffer_desc = {};
 	vertex_buffer_desc.ByteWidth = sizeof(vertex_data_array);
@@ -599,17 +607,42 @@ void CreateVertexIndexBuffer(ID3D11Buffer** ppVertexBuffer, ID3D11Buffer** ppInd
 	assert(SUCCEEDED(hr));
 
 	// Index Buffer 생성하기 
-	unsigned int indicies[] = { 0,1,2 , 0,2,3 };
+	DWORD indices[] = {
+		// front face
+		0, 1, 2,
+		0, 2, 3,
+
+		// back face
+		4, 6, 5,
+		4, 7, 6,
+
+		// left face
+		4, 5, 1,
+		4, 1, 0,
+
+		// right face
+		3, 2, 6,
+		3, 6, 7,
+
+		// top face
+		1, 5, 6,
+		1, 6, 2,
+
+		// bottom face
+		4, 0, 3,
+		4, 3, 7
+	};
 
 	D3D11_BUFFER_DESC idxBufferDesc;
 	idxBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	idxBufferDesc.ByteWidth = sizeof(unsigned int) * 6;
+	// Buffer 의 전체 Byte Size 
+	idxBufferDesc.ByteWidth = sizeof(DWORD) * 12 * 3;
 	idxBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
 	idxBufferDesc.CPUAccessFlags = 0;
 	idxBufferDesc.MiscFlags = 0;
 
 	D3D11_SUBRESOURCE_DATA initData;
-	initData.pSysMem = indicies;
+	initData.pSysMem = indices;
 	initData.SysMemPitch = 0;
 	initData.SysMemSlicePitch = 0;
 
