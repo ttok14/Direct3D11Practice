@@ -79,13 +79,13 @@ ToyMain* pToyMain;
 struct VS_CONSTANT_BUFFER
 {
 	// DirectXMath.h 라이브러리에 DirectX namespace 에 존재 
-	XMFLOAT4X4 mWorldViewProj;
+	XMMATRIX mWorldViewProj;
 	XMFLOAT4 vectorNeededByShader;
 	float floatNeededByShader01;
 	float fTime;
 	float floatNeededByShader02;
 	float floatNeededByShader03;
-} VS_CONSTANT_BUFFER;
+};
 
 //Vertex Structure and Vertex Layout (Input Layout)//
 struct VertexAttribute    //Overloaded Vertex Structure
@@ -277,6 +277,8 @@ void InitializeDirect3D()
 	assert(SUCCEEDED(hr));
 }
 
+XMFLOAT3 gTempPosition = XMFLOAT3(0.1, 1, 0);
+
 // Rendering 수행
 void Render()
 {
@@ -338,6 +340,32 @@ void Render()
 	/*** set vertex shader to use and pixel shader to use, and constant buffers for each ***/
 	pDeviceContext->VSSetShader(pVertexShader, NULL, 0);
 	pDeviceContext->PSSetShader(pPixelShader, NULL, 0);
+
+	// Constant Buffer Test 용 Position 업데이트
+	gTempPosition.x += 0.0001f;
+	gTempPosition.y = 1;
+
+	// Constant Buffer 설정
+	VS_CONSTANT_BUFFER cbData;
+	// 월드행렬 생성 
+	cbData.mWorldViewProj = XMMatrixIdentity();
+	// 이동행렬 적용
+	cbData.mWorldViewProj *= XMMatrixTranslation(gTempPosition.x, gTempPosition.y, gTempPosition.z);
+
+	// SubResource 관련 참고 
+	//		=> https://docs.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-resources-subresources#:~:text=Direct3D%20can%20reference%20an%20entire,1D%2C%202D%2C%20etc.)
+	// Direct3D 는 Resource 들 (e.g. Texture) 에 접근할때 해당 Resource 의 모든 부분에 접근을 하거나 
+	// 또는 해당 Resource 의 일부분 (Subset 개념) 에 접근을 할 수가 있는데 
+	// 이때 일부분에만 접근할 수 있게끔 하기 위해 D3D11_MAPPED_SUBRESOURCE 와도 같은 타입이 존재함.
+	D3D11_MAPPED_SUBRESOURCE mappedResource;
+
+	pDeviceContext->Map(pConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+	CopyMemory(mappedResource.pData, &cbData, sizeof(VS_CONSTANT_BUFFER));
+	pDeviceContext->Unmap(pConstantBuffer, 0);
+	// Shader 의 Vertex Shader 에 해당 Constant Buffer 값을 전달하기 위해서 설정 
+	// 이 처리와 관계없이 Shader 에서는 해당 변수에 접근은 가능하지만 , 
+	// 해당 처리가 없으면 Shader 에서 접근한 해당 Constant Buffer 의 Value 값들은 전부 Zero 로 취급됨 
+	pDeviceContext->VSSetConstantBuffers(0, 1, &pConstantBuffer);
 
 	// Draw 메서드를 호출하면 Pipeline 이 현재 설정된 State 들을 기반으로 
 	// 현재 설정된 Vertex Buffer 를 드로잉 수행
@@ -577,7 +605,8 @@ void CreateVertexIndexBuffer(ID3D11Buffer** ppVertexBuffer, ID3D11Buffer** ppInd
 	vertex_offset = 0;
 
 	D3D11_BUFFER_DESC vertex_buffer_desc = {};
-	vertex_buffer_desc.ByteWidth = sizeof(vertex_data_array);
+	// Buffer 의 Byte Size
+	vertex_buffer_desc.ByteWidth = sizeof(VertexAttribute) * 8;
 	// 해당 Vertex 의 Usage 즉 해당 리소스를 어떻게 사용할것이냐에 따라 
 	// Direct 에서 적절하게 용도에 맞는 메모리에 위치시키고 읽기/쓰기 제한도
 	// 설정해놓음.
@@ -651,18 +680,27 @@ void CreateVertexIndexBuffer(ID3D11Buffer** ppVertexBuffer, ID3D11Buffer** ppInd
 	assert(SUCCEEDED(hr));
 
 	pDeviceContext->IASetIndexBuffer(pIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
-
-	struct ConstantBuffer
-	{
-		struct
-		{
-			float size;
-		}transformation;
-	};
 }
 
 void CreateConstantBuffer(ID3D11Buffer** ppBuffer)
 {
+	VS_CONSTANT_BUFFER vsConstData;
+	ZeroMemory(&vsConstData, sizeof(VS_CONSTANT_BUFFER));
+
+	D3D11_BUFFER_DESC cbDesc;
+	cbDesc.ByteWidth = sizeof(VS_CONSTANT_BUFFER);
+	cbDesc.Usage = D3D11_USAGE_DYNAMIC;
+	cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	cbDesc.MiscFlags = 0;
+	cbDesc.StructureByteStride = 0;
+
+	D3D11_SUBRESOURCE_DATA initData;
+	initData.pSysMem = &vsConstData;
+	initData.SysMemPitch = 0;
+	initData.SysMemSlicePitch = 0;
+
+	HRESULT hr = pDevice->CreateBuffer(&cbDesc, &initData, &pConstantBuffer);
 }
 
 //

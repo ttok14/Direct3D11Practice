@@ -12,12 +12,22 @@ struct vs_out {
 	float4 position_clip : SV_POSITION;
 };
 
+cbuffer VS_CONSTANT_BUFFER : register(b0)
+{
+	matrix mWorldViewProj;
+	float4 vectorNeededByShader;
+	float floatNeededByShader01;
+	float fTime;
+	float floatNeededByShader02;
+	float floatNeededByShader03;
+};
+
 vs_out vs_main(vs_in input) {
 	vs_out output = (vs_out)0; // zero the memory first
-	output.position_clip = float4(input.position_local, 1.0);
+	output.position_clip = mul(float4(input.position_local, 1.0), mWorldViewProj);
 	return output;
 }
 
 float4 ps_main(vs_out input) : SV_TARGET {
-	return float4( 1.0, 0.0, 0.0, 1.0 ); 
+	return float4( 1.0f, 0.0, 0.0, 1.0 ); 
 }
